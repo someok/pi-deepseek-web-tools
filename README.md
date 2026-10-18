@@ -140,11 +140,13 @@ npm run check   # tsc --noEmit + vitest
 ```bash
 npm login
 npm version patch   # 可选：打版本、提交、打 tag
-npm publish
+npm publish         # 或在 VS Code 的 NPM Scripts 面板里点 release（就是这条）
 ```
 
-- `publishConfig.access` 已是 `public`（scoped 包不显式声明会默认私有，发布失败）。
+- 脚本名用 `release` 而不是 `publish`：npm 把 `publish` 当成发布后的生命周期钩子，`"publish": "npm publish"` 会发一次再被钩子发一次，第二次因版本已存在而报错。
 - `prepublishOnly` 会先跑 `npm run check`，typecheck 或测试挂了就不发。
+- 演练用 `npm run release -- --dry-run`，不会真的上传。
+- `publishConfig.access` 已是 `public`（scoped 包不显式声明会默认私有，发布失败）。
 - 先 `npm pack --dry-run` 看打包内容：当前 13 个文件，只含 `src/`、README、LICENSE、示例配置，不含测试和计划文档。
 
 ## 安全

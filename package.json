@@ -41,6 +41,7 @@
 		"test": "vitest --run",
 		"typecheck": "tsc --noEmit",
 		"check": "npm run typecheck && npm test",
+		"release": "npm publish",
 		"prepublishOnly": "npm run check"
 	},
 	"peerDependencies": {

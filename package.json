@@ -1,9 +1,21 @@
 {
-	"name": "pi-deepseek-web-tools",
+	"name": "@someok/pi-deepseek-web-tools",
 	"version": "0.1.0",
 	"description": "pi 扩展：DeepSeek 网页搜索（ds_search）与网页抓取（ds_fetch）",
 	"type": "module",
 	"license": "MIT",
+	"author": "JX Wang <wjianxu@gmail.com>",
+	"homepage": "https://github.com/someok/pi-deepseek-web-tools#readme",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/someok/pi-deepseek-web-tools.git"
+	},
+	"bugs": {
+		"url": "https://github.com/someok/pi-deepseek-web-tools/issues"
+	},
+	"engines": {
+		"node": ">=22.19.0"
+	},
 	"keywords": [
 		"pi-package",
 		"pi-extension",
@@ -22,10 +34,14 @@
 			"./src/index.ts"
 		]
 	},
+	"publishConfig": {
+		"access": "public"
+	},
 	"scripts": {
 		"test": "vitest --run",
 		"typecheck": "tsc --noEmit",
-		"check": "npm run typecheck && npm test"
+		"check": "npm run typecheck && npm test",
+		"prepublishOnly": "npm run check"
 	},
 	"peerDependencies": {
 		"@earendil-works/pi-coding-agent": "*",

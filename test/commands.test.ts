@@ -237,12 +237,12 @@ describe("/fetch", () => {
 	});
 });
 
-describe("/ds-web", () => {
+describe("/ds-tool-config", () => {
 	it("展示启用状态、来源与脱敏 key", async () => {
 		const { handler } = setup({ config: makeConfig({ warnings: ["用户配置存在未知配置项 serach，已忽略"] }) });
 		const { ctx, notify } = createCtx();
 
-		await handler("ds-web")("", ctx);
+		await handler("ds-tool-config")("", ctx);
 
 		const text = String(notify.mock.calls[0]?.[0]);
 		expect(text).toContain("DeepSeek 网络工具：已启用");
@@ -256,7 +256,7 @@ describe("/ds-web", () => {
 		const { handler } = setup({});
 		const { ctx, notify } = createCtx();
 
-		await handler("ds-web")("", ctx);
+		await handler("ds-tool-config")("", ctx);
 
 		expect(String(notify.mock.calls[0]?.[0])).toContain("/reload");
 	});

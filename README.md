@@ -56,7 +56,7 @@ pi install ./
 | `search.needContent` | `false` | 是否在搜索结果里带网页正文 |
 | `fetch.timeoutMs` | `90000` | 1000～300000 |
 
-配置写错（坏 JSON、字段类型不对、拼错键名）不会让扩展崩掉：出问题的字段被忽略并记一条告警，启动时和 `/ds-web` 里能看到。改完配置执行 `/reload` 生效。
+配置写错（坏 JSON、字段类型不对、拼错键名）不会让扩展崩掉：出问题的字段被忽略并记一条告警，启动时和 `/ds-tool-config` 里能看到。改完配置执行 `/reload` 生效。
 
 ## 工具
 
@@ -82,6 +82,7 @@ pi install ./
 
 - 工具行默认折叠，只显示结果条数或字符数；展开后显示工具返回的全部文本，不再按行数二次截断。
 - `/search`、`/fetch` 的结果同样默认折叠，**展开方式：`Ctrl+O` 或鼠标点击**；抓取结果按 Markdown 渲染（标题、列表、代码块、链接）。
+- DeepSeek 的 Fetch 接口会把正文里的标点全转义（`\#`、`\-`、`\,`、`\/`），插件进来时先统一去转义，再渲染和给模型，所以界面上看不到反斜杠。Markdown 渲染关掉了 LaTeX 解析，`(a 100K context is enough)` 这类括号不会当成公式。
 - 唯一的上限是 2000 行 / 50KB（pi 对模型可见内容的约定）：超过时正文末尾会写一行 `[输出已截断：… 完整内容：/tmp/…]`，需要全文时让模型 `read` 那个临时文件。
 
 ## 命令
@@ -91,7 +92,7 @@ pi install ./
 | `/search <搜索词>` | 手动跑一次搜索 |
 | `/fetch <网址>` | 手动抓一个网页，支持 `/fetch <https://...>` 这种粘贴形式 |
 | `/ds-search`、`/ds-fetch` | 上面两个命令的稳定别名（其他扩展占用了 `/search` 时用它们） |
-| `/ds-web` | 查看当前生效的配置：启用状态、key 来源（脱敏）、超时、两个配置文件是否读到 |
+| `/ds-tool-config` | 查看当前生效的配置：启用状态、key 来源（脱敏）、超时、两个配置文件是否读到 |
 
 命令结果写成 custom entry：**只在界面上展示，不进模型上下文**，模型看不到你手动抓的内容。它们会存进当前会话，恢复会话后仍能翻看。
 
@@ -130,4 +131,4 @@ npm run check   # tsc --noEmit + vitest
 
 ## 安全
 
-`apiKey` 只出现在发给 DeepSeek 的请求头里，不会写进工具输出、`details`、`structuredContent` 或日志。`/ds-web` 只显示掩码（如 `sk-****abcd`）。项目级配置含 key 时建议加入 `.gitignore`（本仓库已忽略 `.pi/deepseek-web-tools.json`）。
+`apiKey` 只出现在发给 DeepSeek 的请求头里，不会写进工具输出、`details`、`structuredContent` 或日志。`/ds-tool-config` 只显示掩码（如 `sk-****abcd`）。项目级配置含 key 时建议加入 `.gitignore`（本仓库已忽略 `.pi/deepseek-web-tools.json`）。

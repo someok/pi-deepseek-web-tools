@@ -67,6 +67,15 @@ export function formatSearchResults(input: FormatSearchInput): string {
 	return lines.join("\n");
 }
 
+/**
+ * DeepSeek 的 Fetch 接口会把正文里的标点全部转义（`\#`、`\-`、`\,`、`\/`…）。
+ * 这里把「反斜杠 + ASCII 标点」还原成原字符，恢复页面的标题、列表、链接等 Markdown 结构。
+ * 字母串（如 `\n`、Windows 路径 `C:\Users`）不受影响。
+ */
+export function unescapeMarkdown(text: string): string {
+	return text.replace(/\\([!-/:-@[-`{-~])/g, "$1");
+}
+
 export interface FormatFetchInput {
 	title: string;
 	url: string;

@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { Box, Markdown, MouseRegion, Text, type Component } from "@earendil-works/pi-tui";
-import { formatFetchedPage, formatSearchResults } from "./format";
+import { formatFetchedPage, formatSearchResults, unescapeMarkdown } from "./format";
 import { maskApiKey, type FileStatus, type ResolvedConfig } from "./config";
 import { markdownThemeFrom } from "./markdown-theme";
 import { notEnabledMessage, requireClient, type ExtensionState } from "./state";
@@ -135,8 +135,9 @@ export function registerCommands(pi: ExtensionAPI, state: ExtensionState, deps: 
 		box.addChild(new Text(theme.fg("toolTitle", theme.bold(header)), 0, 0));
 		// 抓取结果是 Markdown，按 Markdown 渲染（反斜杠转义也会被还原）
 		box.addChild(
-			new Markdown(body, 0, 0, markdownThemeFrom(theme), {
-				color: (text) => theme.fg("customMessageText", text),
+			new Markdown(body, 0, 0, markdownThemeFrom(theme), { color: (text) => theme.fg("customMessageText", text) }, {
+				// 网页正文里的 $...$、\(...\) 不应被当成公式
+				renderLatex: false,
 			}),
 		);
 		if (omitted > 0) {
@@ -208,11 +209,13 @@ export function registerCommands(pi: ExtensionAPI, state: ExtensionState, deps: 
 			const url = validateFetchUrl(stripBrackets(raw)).toString();
 			const { client, config } = requireClient(state);
 			const page = await client.fetchPage({ url }, { signal: ctx.signal, timeoutMs: config.fetch.timeoutMs });
-			if (!page.content.trim()) {
+			// DeepSeek Fetch 返回的是「标点全转义」的 Markdown，先去转义再用
+			const content = unescapeMarkdown(page.content);
+			if (!content.trim()) {
 				throw new Error("抓取成功但没有正文：目标页面可能没有可提取的 Markdown 内容，或被站点策略拦截。");
 			}
 
-			const text = formatFetchedPage({ title: page.title, url, content: page.content });
+			const text = formatFetchedPage({ title: page.title, url, content });
 			const truncated = await truncateWithTempFile(text, {
 				prefix: "pi-ds-fetch-",
 				fileName: "content.md",
@@ -221,7 +224,7 @@ export function registerCommands(pi: ExtensionAPI, state: ExtensionState, deps: 
 			const data: FetchEntryData = {
 				url,
 				title: page.title,
-				contentLength: page.content.length,
+				contentLength: content.length,
 				text: truncated.content,
 				truncated: truncated.truncated,
 				...(truncated.fullOutputPath ? { fullOutputPath: truncated.fullOutputPath } : {}),
@@ -251,8 +254,8 @@ export function registerCommands(pi: ExtensionAPI, state: ExtensionState, deps: 
 		handler: fetchHandler,
 	});
 
-	pi.registerCommand("ds-web", {
-		description: "查看 DeepSeek 网络工具配置状态",
+	pi.registerCommand("ds-tool-config", {
+		description: "查看 DeepSeek 网络工具的配置状态",
 		handler: async (_args, ctx) => {
 			if (!state.config) {
 				ctx.ui.notify("DeepSeek 网络工具尚未初始化，执行 /reload 后重试。", "warning");

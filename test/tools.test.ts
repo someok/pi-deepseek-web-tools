@@ -171,13 +171,25 @@ describe("ds_fetch", () => {
 		["https://user:pass@example.com/a", "不能携带用户名或密码"],
 		[`https://example.com/${"a".repeat(9000)}`, "网址过长"],
 		["not a url", "不是合法的网址"],
-	])("拒绝非法 URL：%s", async (url, message) => {
+	])('拒绝非法 URL：%s', async (url, message) => {
 		const client = { fetchPage: vi.fn() };
 
 		const error = await errorOf(run(createFetchTool(stateWith(client)), { url }));
 
 		expect(error.message).toContain(message);
 		expect(client.fetchPage).not.toHaveBeenCalled();
+	});
+
+	it("把接口返回的转义标点还原后再展示", async () => {
+		const client = {
+			fetchPage: vi.fn(async () => ({ title: "T", content: "\\# 标题\n\n\\- 列表" })),
+		};
+
+		const result = await run(createFetchTool(stateWith(client)), { url: "https://example.com/a" });
+
+		expect(result.structuredContent.content).toBe("# 标题\n\n- 列表");
+		expect(result.content[0].text).toContain("# 标题");
+		expect(result.content[0].text).not.toContain("\\#");
 	});
 
 	it("正文为空时抛错", async () => {

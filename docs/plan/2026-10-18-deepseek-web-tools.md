@@ -49,6 +49,8 @@
 
 `url` 必填，≤8192 字符，必须是带 host 的 HTTP/HTTPS URL，不能带用户名或密码。响应 `{ "title": string, "content": string }`，`content` 为 Markdown 正文，`title` 缺失时为空串。
 
+注意：Fetch 返回的 `content` 会把正文里的 ASCII 标点全部转义（`\#`、`\-`、`\,`、`\/`、`\(`），展示前用 `unescapeMarkdown()` 还原；Search 结果的 `content` 不转义。
+
 ### 2.3 错误格式
 
 ```json
@@ -263,7 +265,7 @@ function resolveConfig(input: {
 
 1. 工厂内创建共享状态 `{ config?: ResolvedConfig; client?: DeepSeekWebClient }`。
 2. 注册 `ds_search`、`ds_fetch`（`direct` 注册即激活）。
-3. 注册 `/search`、`/fetch`、`/ds-web` 三个命令，以及两个消息渲染器。
+3. 注册 `/search`、`/fetch`、`/ds-tool-config` 等命令，以及 entry 渲染器。
 4. 在 `session_start` 里：
    - `resolveConfig({ cwd: ctx.cwd, agentDir, env: process.env, projectTrusted: ctx.isProjectTrusted() })`；
    - 启用就把两个工具名并入 `pi.getActiveTools()`，禁用就把它们从活跃集合里删掉，再 `pi.setActiveTools(...)`（只动自己这两个名字，不碰别的扩展）。
@@ -321,12 +323,12 @@ function resolveConfig(input: {
 
 pi 对重名命令自动加 `:1` / `:2` 后缀（实测 pi-web-access 的 `search` 占用了 `/search`，我们的变成 `/search:2`）。因此同时注册 `/ds-search`、`/ds-fetch` 作为稳定名字。
 
-### 6.5 `/ds-web`
+### 6.5 `/ds-tool-config`
 
 配置自查（用户原始需求只有两个工具 + 启动提示，命令部分是实现补充）：
 
 - 输出启用状态、apiKey 来源（`project`/`user`/`env`）+ 掩码（`sk-****abcd`，只留后 4 位）、`baseUrl`、`search.timeoutMs`、`search.count`、`search.needContent`、`fetch.timeoutMs`、两个配置文件路径与状态、warnings。
-- 不再提供 `/ds-web test`，连通性验证由 `/search` 代替。
+- 不再提供 `/ds-tool-config test`，连通性验证由 `/search` 代替。
 
 apiKey 任何情况下都不完整打印，也不进 entry 数据、不进错误信息、不进命令输出。
 
@@ -369,7 +371,7 @@ src/config.ts                    resolveConfig（纯函数）+ 类型
 src/client.ts                    DeepSeekWebClient（search / fetchPage / post，每次调用传 timeoutMs）+ DeepSeekApiError
 src/tools.ts                     createSearchTool / createFetchTool
 src/format.ts                    formatSearchResults / formatFetchContent（工具和命令共用）
-src/commands.ts                  registerCommands：/search、/fetch、/ds-web + 消息渲染器
+src/commands.ts                  registerCommands：/search、/ds-search、/fetch、/ds-fetch、/ds-tool-config + entry 渲染器
 src/truncate.ts                  truncateWithTempFile 共享截断 + 临时文件
 test/config.test.ts
 test/client.test.ts
@@ -452,7 +454,7 @@ vitest，全部走注入依赖，不碰真实网络（`DeepSeekWebClient` 接受
 7. `/fetch <https://example.com/a>` → 去掉尖括号，`sendMessage` 的 `customType === "ds-fetch-result"`，内容含标题与正文。
 8. `/fetch` 超长正文 → 消息截断 + `details.fullOutputPath` 存在。
 9. `/fetch ftp://x` → notify error，没发请求。
-10. `/ds-web` → notify 内容含 apiKey 来源与掩码，且不含完整 key。
+10. `/ds-tool-config` → notify 内容含 apiKey 来源与掩码，且不含完整 key。
 
 ### 手动验收
 
@@ -460,7 +462,7 @@ vitest，全部走注入依赖，不碰真实网络（`DeepSeekWebClient` 接受
 2. 无 key：`pi -e ./` 启动弹一次 warning，工具列表里没有 `ds_search`/`ds_fetch`。
 3. 有 key：`DEEPSEEK_API_KEY=sk-xxx pi -e ./` 启动无提示，`ds_search` 能返回结果，`ds_fetch` 能抓回正文。
 4. 项目里放 `.pi/deepseek-web-tools.json` 写 `{"enabled": false}` 覆盖环境变量 → 工具消失且不弹提示。
-5. `/ds-web` 显示来源与掩码正确；`/search DeepSeek` 在会话里出结果；`/fetch <url>` 能拉回正文。
+5. `/ds-tool-config` 显示来源与掩码正确；`/search DeepSeek` 在会话里出结果；`/fetch <url>` 能拉回正文。
 6. 改配置后 `/reload` 生效。
 7. `pi install ./`（本地包）能被识别并加载。
 
@@ -485,7 +487,7 @@ vitest，全部走注入依赖，不碰真实网络（`DeepSeekWebClient` 接受
 - 搜索默认不发 `need_content`；`search.needContent` 为 true 时改发 `true`，工具参数 `needContent` 优先于配置。
 - 不做自动重试、不做并发限流；429/5xx 由模型或用户决定重试。
 - 截断阈值沿用 pi 内置常量（50KB / 2000 行），完整内容落临时文件。
-- `/ds-web` 命令是实现补充，超出原始需求但便于自查；若不需要可整段删掉，不影响两个工具。
+- `/ds-tool-config` 命令是实现补充，超出原始需求但便于自查；若不需要可整段删掉，不影响两个工具。
 - `/search`、`/fetch` 的结果以 custom message 写入会话（`display: true`），不带 `triggerTurn`，不会自动触发模型；内容受同样截断限制，完整版落临时文件。
 - 命令不做参数补全，不解析 `--count` 之类选项，条数只从配置读。
 - 计费按「每次成功请求」计（Search 有结果、Fetch 有正文才算成功），README 里提示 2026-11-01 起第三方工具调用开始计费、各 5 QPS 限速。
@@ -505,10 +507,11 @@ vitest，全部走注入依赖，不碰真实网络（`DeepSeekWebClient` 接受
 | 真实 `ds_fetch` | 拉回 `https://api.deepseek.com/v1/tools/fetch` 的 Markdown 正文 |
 | `/ds-search` | 会话里出现 `🔍 … · 10 条结果` entry，折叠提示「Ctrl+O 或点击展开」 |
 | `/fetch` | entry 按 Markdown 渲染（转义还原），`Ctrl+O` 后显示完整正文 |
+| `/fetch` 标点转义 | 实测同一页面：去转义前 53548 字符、带 `\#`；去转义后 50104 字符、0 个反斜杠，标题/列表/括号正常 |
 | 命令结果不进上下文 | `--mode json` 里只有 `entry_appended`（type=custom），没有 `custom_message`；代码侧 `sessionEntryToContextMessages` 对 custom 返回 `[]` |
 | 无 key 启动 | 输出「DeepSeek 网络工具未启用：缺少 API key。」及配置说明，工具不激活 |
 | 项目级 `enabled: false` | 单测覆盖：停用且不提示 |
 
-未执行的手工步骤：`pi install ./`（会写入用户 settings，是否安装由使用者决定）。print 模式无 UI，`/ds-web` 的 notify 输出看不到，属预期行为。
+未执行的手工步骤：`pi install ./`（会写入用户 settings，是否安装由使用者决定）。print 模式无 UI，`/ds-tool-config` 的 notify 输出看不到，属预期行为。
 
 补充记录：用户已自行 `pi install ./`。共同安装的 pi-web-access 也注册了 `/search`，pi 将其重命名为 `search:1`、我们的为 `search:2`，因此新增 `/ds-search` / `/ds-fetch` 别名。鼠标点击展开依赖全屏模式的鼠标路由，regular 模式只有 `Ctrl+O`。

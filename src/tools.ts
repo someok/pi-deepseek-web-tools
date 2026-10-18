@@ -2,7 +2,7 @@ import { defineTool, type TruncationResult } from "@earendil-works/pi-coding-age
 import { Container, Markdown, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import type { SearchResultItem } from "./client";
-import { formatFetchedPage, formatSearchResults } from "./format";
+import { formatFetchedPage, formatSearchResults, unescapeMarkdown } from "./format";
 import { markdownThemeFrom } from "./markdown-theme";
 import { requireClient, type ExtensionState } from "./state";
 import { truncateWithTempFile } from "./truncate";
@@ -260,11 +260,13 @@ export function createFetchTool(state: ExtensionState) {
 			const url = validateFetchUrl(params.url).toString();
 
 			const page = await client.fetchPage({ url }, { signal, timeoutMs: config.fetch.timeoutMs });
-			if (!page.content.trim()) {
+			// DeepSeek Fetch 返回的是「标点全转义」的 Markdown，先去转义再用
+			const content = unescapeMarkdown(page.content);
+			if (!content.trim()) {
 				throw new Error("抓取成功但没有正文：目标页面可能没有可提取的 Markdown 内容，或被站点策略拦截。");
 			}
 
-			const text = formatFetchedPage({ title: page.title, url, content: page.content });
+			const text = formatFetchedPage({ title: page.title, url, content });
 			const truncated = await truncateWithTempFile(text, {
 				prefix: "pi-ds-fetch-",
 				fileName: "content.md",
@@ -273,7 +275,7 @@ export function createFetchTool(state: ExtensionState) {
 			const details: FetchDetails = {
 				url,
 				title: page.title,
-				contentLength: page.content.length,
+				contentLength: content.length,
 				...(truncated.truncated
 					? { truncation: truncated.truncation, fullOutputPath: truncated.fullOutputPath }
 					: {}),
@@ -285,8 +287,8 @@ export function createFetchTool(state: ExtensionState) {
 				structuredContent: {
 					url,
 					title: page.title,
-					content: page.content,
-					contentLength: page.content.length,
+					content,
+					contentLength: content.length,
 					truncated: truncated.truncated,
 					...(truncated.fullOutputPath ? { fullOutputPath: truncated.fullOutputPath } : {}),
 				},
@@ -317,9 +319,15 @@ export function createFetchTool(state: ExtensionState) {
 			const container = new Container();
 			container.addChild(new Text(text, 0, 0));
 			container.addChild(
-				new Markdown(textOfContent(result.content), 0, 0, markdownThemeFrom(theme), {
-					color: (part) => theme.fg("toolOutput", part),
-				}),
+				new Markdown(
+					textOfContent(result.content),
+					0,
+					0,
+					markdownThemeFrom(theme),
+					{ color: (part) => theme.fg("toolOutput", part) },
+					// 网页正文里的 $...$、\(...\) 不应被当成公式
+					{ renderLatex: false },
+				),
 			);
 
 			return container;

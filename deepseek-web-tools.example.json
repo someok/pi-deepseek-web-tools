@@ -1,0 +1,13 @@
+{
+	"enabled": true,
+	"apiKey": "sk-your-deepseek-api-key",
+	"baseUrl": "https://api.deepseek.com",
+	"search": {
+		"timeoutMs": 30000,
+		"count": 10,
+		"needContent": false
+	},
+	"fetch": {
+		"timeoutMs": 90000
+	}
+}

@@ -6,9 +6,9 @@
 
 ---
 
-Two tools for [pi](https://pi.dev): `ds_search` (web search) and `ds_fetch` (page fetching), backed by the official DeepSeek [Search / Fetch API](https://api-docs.deepseek.com/guides/search).
+Two tools for [pi](https://pi.dev): `ds_search` (web search) and `ds_fetch` (fetching). Ordinary pages go through the official DeepSeek [Search / Fetch API](https://api-docs.deepseek.com/guides/search). GitHub URLs take a different path: repositories are cloned locally so the model can read real source files, and PRs/issues are rendered into a structured document with the local `gh` CLI.
 
-With a complete configuration the tools are available automatically. Without an API key they stay hidden from the model, and startup prints a one-time notice.
+With a complete configuration both tools are available. Without a DeepSeek key, `ds_search` and ordinary page fetching are unavailable, but the GitHub half of `ds_fetch` keeps working.
 
 ## Install
 
@@ -51,6 +51,13 @@ Full example (also in `deepseek-web-tools.example.json`):
   },
   "fetch": {
     "timeoutMs": 90000
+  },
+  "github": {
+    "enabled": true,
+    "prIssue": true,
+    "maxRepoSizeMB": 350,
+    "cloneTimeoutSeconds": 30,
+    "clonePath": "~/pi-github-repos"
   }
 }
 ```
@@ -66,6 +73,11 @@ Merge rules: each field resolves project → user → default; `apiKey` addition
 | `search.count` | not sent (API default 10) | 1–50 |
 | `search.needContent` | `false` | include page body in search results |
 | `fetch.timeoutMs` | `90000` | 1000–300000 |
+| `github.enabled` | `true` | when false, `ds_fetch` stops using the GitHub-specific paths |
+| `github.prIssue` | `true` | render PRs/issues into a structured document with `gh` |
+| `github.maxRepoSizeMB` | `350` | larger repos use the lightweight GitHub API view instead of a clone |
+| `github.cloneTimeoutSeconds` | `30` | 1–600; on timeout the whole git process group is killed |
+| `github.clonePath` | `pi-github-repos` under the system temp dir | `~` and `$HOME` style paths are expanded |
 
 A broken config (invalid JSON, wrong type, typo) never crashes the extension: the offending field is ignored with a warning shown at startup and in `/ds-tool-config`. Run `/reload` after editing.
 
@@ -88,6 +100,25 @@ Returns a numbered result list (title / URL / site and publish date / summary). 
 | `url` | yes | HTTP/HTTPS URL with a host, no credentials, at most 8192 characters |
 
 Returns the page title plus Markdown body. The body is truncated the same way (2000 lines / 50KB), with the full content written to a temp file.
+
+`github.com` URLs are routed to the dedicated paths described below.
+
+## GitHub URLs
+
+When `ds_fetch` receives a `github.com` URL it stops using DeepSeek and dispatches on the URL shape:
+
+| URL | What happens |
+| --- | --- |
+| `github.com/owner/repo` | cloned locally; returns the tree, README, and the local path |
+| `.../tree/main/src` | returns that directory's listing with file sizes |
+| `.../blob/main/src/index.ts` | returns the file contents; binary files only report type and size |
+| `.../pull/123`, `.../issues/7` | fetched with `gh` and rendered with state, branch, checks, reviews, files, commits, and comments |
+| repos over `maxRepoSizeMB` | fall back to the lightweight GitHub API view (tree + README) |
+| `.../commit/<sha>` | goes straight to the API instead of cloning for one commit |
+
+Clones are shallow and single-branch (`--depth 1 --single-branch`), and repeat fetches of the same repo reuse the local directory.
+
+**Dependencies**: `git` is required; `gh` is optional. Install it for full PR/issue views and private repositories. Without `gh`, PRs and issues fall back to ordinary page fetching. This path never spends DeepSeek credits.
 
 ### How output is displayed
 
@@ -137,8 +168,8 @@ npm install
 npm run check   # tsc --noEmit + vitest
 ```
 
-- No runtime dependencies; uses Node's built-in `fetch`.
-- Tests inject a fake `fetchImpl` and never touch the network.
+- No runtime npm dependencies: ordinary pages use Node's built-in `fetch`, GitHub uses built-in `child_process` to call `git` / `gh`.
+- Tests inject a fake `fetchImpl` or exercise pure functions and never touch the network.
 - `src/config.ts` is a pure function, so config merging is easy to test on its own.
 
 ## Publishing to npm

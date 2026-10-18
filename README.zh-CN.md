@@ -4,9 +4,9 @@
 
 ---
 
-给 [pi](https://pi.dev) 加两个工具：`ds_search`（DeepSeek 网页搜索）和 `ds_fetch`（DeepSeek 网页抓取），底层走 DeepSeek 官方 [Search / Fetch API](https://api-docs.deepseek.com/zh-cn/guides/search)。
+给 [pi](https://pi.dev) 加两个工具：`ds_search`（DeepSeek 网页搜索）和 `ds_fetch`（网页抓取）。普通网页走 DeepSeek 官方 [Search / Fetch API](https://api-docs.deepseek.com/zh-cn/guides/search)；GitHub 链接自动改走本地 `git` / `gh`，仓库直接克隆到本地让模型翻源码，PR/Issue 渲染成结构化文档。
 
-配置齐全时工具自动可用；没配 key 时启动会提示一次，工具对模型不可见。
+配置齐全时两个工具都可用；没配 DeepSeek key 时 `ds_search` 和普通网页抓取不可用，但 `ds_fetch` 的 GitHub 部分照常工作。
 
 ## 安装
 
@@ -49,6 +49,13 @@ pi -e ./
   },
   "fetch": {
     "timeoutMs": 90000
+  },
+  "github": {
+    "enabled": true,
+    "prIssue": true,
+    "maxRepoSizeMB": 350,
+    "cloneTimeoutSeconds": 30,
+    "clonePath": "~/pi-github-repos"
   }
 }
 ```
@@ -64,6 +71,11 @@ pi -e ./
 | `search.count` | 不发送（API 默认 10） | 1～50 |
 | `search.needContent` | `false` | 是否在搜索结果里带网页正文 |
 | `fetch.timeoutMs` | `90000` | 1000～300000 |
+| `github.enabled` | `true` | 关掉后 `ds_fetch` 不再走 GitHub 专用路径 |
+| `github.prIssue` | `true` | 是否用 `gh` 把 PR/Issue 渲染成结构化文档 |
+| `github.maxRepoSizeMB` | `350` | 超过这个体积改用 GitHub API 轻量视图，不克隆 |
+| `github.cloneTimeoutSeconds` | `30` | 1～600，超时后连 git 子进程一起杀掉 |
+| `github.clonePath` | 系统临时目录下 `pi-github-repos` | 支持 `~` 和 `$HOME` 这类写法 |
 
 配置写错（坏 JSON、字段类型不对、拼错键名）不会让扩展崩掉：出问题的字段被忽略并记一条告警，启动时和 `/ds-tool-config` 里能看到。改完配置执行 `/reload` 生效。
 
@@ -86,6 +98,25 @@ pi -e ./
 | `url` | 是 | 必须是带 host 的 HTTP/HTTPS 地址，不带用户名密码，长度 ≤8192 |
 
 返回页面标题加 Markdown 正文。正文同样按 2000 行 / 50KB 截断，完整内容落临时文件。
+
+遇到 `github.com` 链接会自动改走专用路径，详见下一节。
+
+## GitHub 链接
+
+`ds_fetch` 拿到 `github.com` 的 URL 时不再走 DeepSeek，而是按 URL 类型分派：
+
+| URL | 处理方式 |
+| --- | --- |
+| `github.com/owner/repo` | 克隆到本地，返回目录树 + README + 本地路径 |
+| `.../tree/main/src` | 返回该目录的文件列表（带大小） |
+| `.../blob/main/src/index.ts` | 返回文件内容；二进制文件只说明类型和大小 |
+| `.../pull/123`、`.../issues/7` | 用 `gh` 取数，渲染成一份带状态、分支、CI、review、文件、commits、评论的文档 |
+| 超过 `maxRepoSizeMB` 的仓库 | 自动改用 GitHub API 的轻量视图（tree + README） |
+| `.../commit/<sha>` | 直接走 API，不为看一个提交克隆整个仓库 |
+
+克隆只拉一个分支的一层历史（`--depth 1 --single-branch`），同一个仓库重复抓取会复用本地目录。
+
+**依赖**：`git` 必需；`gh` 可选，但装了才有完整的 PR/Issue 视图和私有仓库访问，没有 `gh` 时 PR/Issue 会回落到普通网页抓取。GitHub 这条路不消耗 DeepSeek 额度。
 
 ### 界面上的显示
 
@@ -135,8 +166,8 @@ npm install
 npm run check   # tsc --noEmit + vitest
 ```
 
-- 运行时不依赖任何 npm 包，用 Node 内置 `fetch`。
-- 测试全部走注入的 `fetchImpl`，不联网。
+- 运行时不依赖任何 npm 包：普通网页用 Node 内置 `fetch`，GitHub 用内置 `child_process` 调 `git` / `gh`。
+- 测试全部走注入的 `fetchImpl` 或纯函数，不联网。
 - `src/config.ts` 是纯函数，方便单独测配置合并。
 
 ## 发布到 npm

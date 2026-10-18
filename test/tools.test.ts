@@ -20,6 +20,13 @@ function makeConfig(overrides: { search?: Partial<ResolvedConfig["search"]>; fet
 		baseUrl: "https://api.deepseek.com",
 		search: { timeoutMs: 30_000, needContent: false, ...overrides.search },
 		fetch: { timeoutMs: 90_000, ...overrides.fetch },
+		github: {
+			enabled: false,
+			maxRepoSizeMB: 350,
+			cloneTimeoutSeconds: 30,
+			clonePath: "/tmp/pi-github-repos",
+			prIssue: true,
+		},
 		projectFile: { path: "/tmp/project.json", status: "missing" },
 		userFile: { path: "/tmp/user.json", status: "missing" },
 		warnings: [],

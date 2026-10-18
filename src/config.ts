@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 /** 配置文件读取状态 */
@@ -21,6 +22,19 @@ export interface FetchConfig {
 	timeoutMs: number;
 }
 
+export interface GitHubConfig {
+	/** 是否让 ds_fetch 处理 GitHub 链接，默认 true */
+	enabled: boolean;
+	/** 超过该体积的仓库改用 GitHub API 轻量视图，默认 350 */
+	maxRepoSizeMB: number;
+	/** 单次 clone 超时，默认 30 秒 */
+	cloneTimeoutSeconds: number;
+	/** clone 落地目录，默认系统临时目录下的 pi-github-repos */
+	clonePath: string;
+	/** 是否用 gh CLI 渲染 PR / Issue，默认 true */
+	prIssue: boolean;
+}
+
 export interface ResolvedConfig {
 	enabled: boolean;
 	/** 未启用的原因：ok 正常启用；missing-key 缺 key；explicitly-disabled 配置里关掉了 */
@@ -30,6 +44,7 @@ export interface ResolvedConfig {
 	baseUrl: string;
 	search: SearchConfig;
 	fetch: FetchConfig;
+	github: GitHubConfig;
 	projectFile: { path: string; status: FileStatus };
 	userFile: { path: string; status: FileStatus };
 	/** 配置里的无效值和未知键 */
@@ -51,10 +66,17 @@ export const MIN_TIMEOUT_MS = 1_000;
 export const MAX_TIMEOUT_MS = 300_000;
 export const MIN_COUNT = 1;
 export const MAX_COUNT = 50;
+export const DEFAULT_MAX_REPO_SIZE_MB = 350;
+export const DEFAULT_CLONE_TIMEOUT_SECONDS = 30;
+export const MIN_CLONE_TIMEOUT_SECONDS = 1;
+export const MAX_CLONE_TIMEOUT_SECONDS = 600;
+export const MIN_REPO_SIZE_MB = 1;
+export const MAX_REPO_SIZE_MB = 100_000;
 
-const GLOBAL_KEYS = new Set(["enabled", "apiKey", "baseUrl", "search", "fetch"]);
+const GLOBAL_KEYS = new Set(["enabled", "apiKey", "baseUrl", "search", "fetch", "github"]);
 const SEARCH_KEYS = new Set(["timeoutMs", "count", "needContent"]);
 const FETCH_KEYS = new Set(["timeoutMs"]);
+const GITHUB_KEYS = new Set(["enabled", "maxRepoSizeMB", "cloneTimeoutSeconds", "clonePath", "prIssue"]);
 
 interface LoadedFile {
 	path: string;
@@ -159,7 +181,7 @@ function readBaseUrl(
 
 function readGroup(
 	data: Record<string, unknown> | undefined,
-	key: "search" | "fetch",
+	key: "search" | "fetch" | "github",
 	allowed: Set<string>,
 	label: string,
 	warnings: string[],
@@ -176,6 +198,31 @@ function readGroup(
 		}
 	}
 	return value;
+}
+
+function readString(
+	data: Record<string, unknown> | undefined,
+	key: string,
+	label: string,
+	warnings: string[],
+): string | undefined {
+	const value = data?.[key];
+	if (value === undefined || value === null) return undefined;
+	if (typeof value !== "string") {
+		warnings.push(`${label} 必须是字符串，已忽略`);
+		return undefined;
+	}
+	const trimmed = value.trim();
+	return trimmed.length > 0 ? trimmed : undefined;
+}
+
+/** 展开 ~ 与 $HOME 这类环境变量，保持与 shell 里写法一致 */
+function expandPath(value: string, env: Record<string, string | undefined>): string {
+	let expanded = value;
+	if (expanded.startsWith("~/") || expanded === "~") {
+		expanded = expanded.replace(/^~/, env.HOME || env.USERPROFILE || "");
+	}
+	return expanded.replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (match, name: string) => env[name] ?? match);
 }
 
 function readInteger(
@@ -222,6 +269,8 @@ export function resolveConfig(input: ResolveConfigInput): ResolvedConfig {
 	const userSearch = readGroup(user, "search", SEARCH_KEYS, "用户配置", warnings);
 	const projectFetch = readGroup(project, "fetch", FETCH_KEYS, "项目配置", warnings);
 	const userFetch = readGroup(user, "fetch", FETCH_KEYS, "用户配置", warnings);
+	const projectGithub = readGroup(project, "github", GITHUB_KEYS, "项目配置", warnings);
+	const userGithub = readGroup(user, "github", GITHUB_KEYS, "用户配置", warnings);
 
 	const projectKey = readApiKey(project, "项目配置", warnings);
 	const userKey = readApiKey(user, "用户配置", warnings);
@@ -270,6 +319,55 @@ export function resolveConfig(input: ResolveConfigInput): ResolvedConfig {
 		readInteger(userFetch, "timeoutMs", "用户配置 fetch.timeoutMs", { min: MIN_TIMEOUT_MS, max: MAX_TIMEOUT_MS }, warnings) ??
 		DEFAULT_FETCH_TIMEOUT_MS;
 
+	const githubEnabled =
+		readBoolean(projectGithub, "enabled", "项目配置 github.enabled", warnings) ??
+		readBoolean(userGithub, "enabled", "用户配置 github.enabled", warnings) ??
+		true;
+
+	const githubPrIssue =
+		readBoolean(projectGithub, "prIssue", "项目配置 github.prIssue", warnings) ??
+		readBoolean(userGithub, "prIssue", "用户配置 github.prIssue", warnings) ??
+		true;
+
+	const maxRepoSizeMB =
+		readInteger(
+			projectGithub,
+			"maxRepoSizeMB",
+			"项目配置 github.maxRepoSizeMB",
+			{ min: MIN_REPO_SIZE_MB, max: MAX_REPO_SIZE_MB },
+			warnings,
+		) ??
+		readInteger(
+			userGithub,
+			"maxRepoSizeMB",
+			"用户配置 github.maxRepoSizeMB",
+			{ min: MIN_REPO_SIZE_MB, max: MAX_REPO_SIZE_MB },
+			warnings,
+		) ??
+		DEFAULT_MAX_REPO_SIZE_MB;
+
+	const cloneTimeoutSeconds =
+		readInteger(
+			projectGithub,
+			"cloneTimeoutSeconds",
+			"项目配置 github.cloneTimeoutSeconds",
+			{ min: MIN_CLONE_TIMEOUT_SECONDS, max: MAX_CLONE_TIMEOUT_SECONDS },
+			warnings,
+		) ??
+		readInteger(
+			userGithub,
+			"cloneTimeoutSeconds",
+			"用户配置 github.cloneTimeoutSeconds",
+			{ min: MIN_CLONE_TIMEOUT_SECONDS, max: MAX_CLONE_TIMEOUT_SECONDS },
+			warnings,
+		) ??
+		DEFAULT_CLONE_TIMEOUT_SECONDS;
+
+	const clonePathRaw =
+		readString(projectGithub, "clonePath", "项目配置 github.clonePath", warnings) ??
+		readString(userGithub, "clonePath", "用户配置 github.clonePath", warnings);
+	const clonePath = clonePathRaw ? expandPath(clonePathRaw, input.env) : join(tmpdir(), "pi-github-repos");
+
 	return {
 		enabled,
 		reason,
@@ -283,6 +381,13 @@ export function resolveConfig(input: ResolveConfigInput): ResolvedConfig {
 		},
 		fetch: {
 			timeoutMs: fetchTimeoutMs,
+		},
+		github: {
+			enabled: githubEnabled,
+			maxRepoSizeMB,
+			cloneTimeoutSeconds,
+			clonePath,
+			prIssue: githubPrIssue,
 		},
 		projectFile: { path: projectFile.path, status: projectFile.status },
 		userFile: { path: userFile.path, status: userFile.status },

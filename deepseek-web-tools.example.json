@@ -9,5 +9,12 @@
 	},
 	"fetch": {
 		"timeoutMs": 90000
+	},
+	"github": {
+		"enabled": true,
+		"prIssue": true,
+		"maxRepoSizeMB": 350,
+		"cloneTimeoutSeconds": 30,
+		"clonePath": "~/pi-github-repos"
 	}
 }

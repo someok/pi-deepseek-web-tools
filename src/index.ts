@@ -7,19 +7,17 @@ import { resolveConfig, type ResolvedConfig } from "./config";
 import { MISSING_KEY_MESSAGE, type ExtensionState } from "./state";
 import { createFetchTool, createSearchTool } from "./tools";
 
-const TOOL_NAMES = ["ds_search", "ds_fetch"] as const;
-
 function agentDir(): string {
 	const configured = process.env.PI_CODING_AGENT_DIR?.trim();
 	return configured && configured.length > 0 ? configured : join(homedir(), ".pi", "agent");
 }
 
 /** 只增删自己的两个工具名，保留其他扩展已激活的工具 */
-function syncActiveTools(pi: ExtensionAPI, enabled: boolean): void {
+function syncActiveTools(pi: ExtensionAPI, availability: Record<string, boolean>): void {
 	const active = new Set(pi.getActiveTools());
 	let changed = false;
 
-	for (const name of TOOL_NAMES) {
+	for (const [name, enabled] of Object.entries(availability)) {
 		if (enabled) {
 			if (!active.has(name)) {
 				active.add(name);
@@ -79,7 +77,12 @@ export default function deepseekWebTools(pi: ExtensionAPI): void {
 		currentUi = ctx.ui;
 
 		try {
-			syncActiveTools(pi, config.enabled);
+			// enabled: false 是硬关；缺 key 只关 ds_search，ds_fetch 仍能处理 GitHub（clone 和 gh 不花 DeepSeek 额度）
+			const hardDisabled = config.reason === "explicitly-disabled";
+			syncActiveTools(pi, {
+				ds_search: config.enabled,
+				ds_fetch: !hardDisabled && (config.enabled || config.github.enabled),
+			});
 		} catch (error) {
 			console.warn(
 				`[deepseek-web-tools] 调整工具可用性失败：${error instanceof Error ? error.message : String(error)}`,

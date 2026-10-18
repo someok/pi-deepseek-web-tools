@@ -106,7 +106,7 @@ describe("扩展装配", () => {
 		expect(harness.active()).toEqual(["ds_search", "ds_fetch"]);
 	});
 
-	it("没有 key 时停用工具并提示一次", async () => {
+	it("没有 key 时只保留 ds_fetch 并提示一次", async () => {
 		const { agentDir, cwd } = await tempDirs();
 		process.env.PI_CODING_AGENT_DIR = agentDir;
 		delete process.env.DEEPSEEK_API_KEY;
@@ -115,7 +115,8 @@ describe("扩展装配", () => {
 		deepseekWebTools(harness.pi);
 		await harness.handlers.get("session_start")!({ type: "session_start", reason: "startup" }, sessionCtx(harness, cwd));
 
-		expect(harness.active()).toEqual([]);
+		// ds_search 需要 key；ds_fetch 的 GitHub 分支不需要，所以保留
+		expect(harness.active()).toEqual(["ds_fetch"]);
 		expect(harness.setActiveTools).toHaveBeenCalled();
 		expect(harness.notify).toHaveBeenCalledTimes(1);
 		expect(String(harness.notify.mock.calls[0]?.[0])).toContain("缺少 API key");
@@ -156,7 +157,8 @@ describe("扩展装配", () => {
 			sessionCtx(harness, cwd, false),
 		);
 
-		expect(harness.active()).toEqual([]);
+		// 项目级 key 被忽略，只剩 ds_fetch 的 GitHub 能力
+		expect(harness.active()).toEqual(["ds_fetch"]);
 		expect(String(harness.notify.mock.calls[0]?.[0])).toContain("缺少 API key");
 	});
 });

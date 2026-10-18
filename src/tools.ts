@@ -3,6 +3,7 @@ import { Container, Markdown, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import type { SearchResultItem } from "./client";
 import { formatFetchedPage, formatSearchResults, unescapeMarkdown } from "./format";
+import { extractGitHubUrl } from "./github";
 import { markdownThemeFrom } from "./markdown-theme";
 import { requireClient, type ExtensionState } from "./state";
 import { truncateWithTempFile } from "./truncate";
@@ -75,12 +76,67 @@ export interface SearchDetails {
 	fullOutputPath?: string;
 }
 
+export type FetchSource = "deepseek" | "clone" | "api" | "gh";
+
 export interface FetchDetails {
 	url: string;
 	title: string;
 	contentLength: number;
+	/** 正文从哪来：DeepSeek Fetch、本地 clone、GitHub API 或 gh CLI */
+	source: FetchSource;
 	truncation?: TruncationResult;
 	fullOutputPath?: string;
+}
+
+const SOURCE_LABELS: Record<FetchSource, string> = {
+	deepseek: "DeepSeek",
+	clone: "GitHub clone",
+	api: "GitHub API",
+	gh: "gh",
+};
+
+interface BuildFetchResultInput {
+	url: string;
+	title: string;
+	content: string;
+	source: FetchSource;
+}
+
+/** ds_fetch 的两条取数路径共用同一个返回结构 */
+async function buildFetchResult(input: BuildFetchResultInput) {
+	const { url, title, content, source } = input;
+	if (!content.trim()) {
+		throw new Error("抓取成功但没有正文：目标页面可能没有可提取的内容，或被站点策略拦截。");
+	}
+
+	const text = formatFetchedPage({ title, url, content });
+	const truncated = await truncateWithTempFile(text, {
+		prefix: "pi-ds-fetch-",
+		fileName: "content.md",
+	});
+
+	const details: FetchDetails = {
+		url,
+		title,
+		contentLength: content.length,
+		source,
+		...(truncated.truncated
+			? { truncation: truncated.truncation, fullOutputPath: truncated.fullOutputPath }
+			: {}),
+	};
+
+	return {
+		content: [{ type: "text" as const, text: truncated.content }],
+		details,
+		structuredContent: {
+			url,
+			title,
+			content,
+			contentLength: content.length,
+			truncated: truncated.truncated,
+			...(truncated.fullOutputPath ? { fullOutputPath: truncated.fullOutputPath } : {}),
+		},
+	};
 }
 
 function textOfContent(content: ReadonlyArray<unknown>): string {
@@ -245,10 +301,11 @@ export function createFetchTool(state: ExtensionState) {
 		name: "ds_fetch",
 		label: "DeepSeek 抓取",
 		description:
-			"用 DeepSeek 抓取单个网页，返回页面标题与 Markdown 正文。只支持 HTTP/HTTPS 公共网页；正文超过 2000 行或 50KB 时会截断，完整内容写入临时文件。",
-		promptSnippet: "ds_fetch: 抓取网页正文（Markdown）",
+			"抓取单个 URL 并返回标题与 Markdown 正文。GitHub 链接会自动走专用路径：仓库克隆到本地并给出路径与目录树，PR/Issue 用 gh 渲染成结构化文档；其余地址走 DeepSeek Fetch。正文超过 2000 行或 50KB 时会截断，完整内容写入临时文件。",
+		promptSnippet: "ds_fetch: 抓取网页正文；GitHub 链接自动 clone 或渲染 PR/Issue",
 		promptGuidelines: [
 			"拿到具体 URL 后需要整页内容时用 ds_fetch，不要用 curl 或 read 去读网页。",
+			"ds_fetch 遇到 github.com 链接会克隆仓库或渲染 PR/Issue，返回本地路径供 read/bash 继续翻源码，不需要再手动 git clone。",
 			"ds_fetch 只接受 http/https 地址，不能读本地文件；抓取失败时换个来源或改用 ds_search。",
 		],
 		parameters: fetchParameters,
@@ -256,43 +313,30 @@ export function createFetchTool(state: ExtensionState) {
 		annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
 
 		async execute(_toolCallId, params, signal) {
-			const { client, config } = requireClient(state);
 			const url = validateFetchUrl(params.url).toString();
+
+			// GitHub 链接先走专用路径：clone 仓库或 gh 渲染 PR/Issue，不消耗 DeepSeek 额度。
+			// 拿不到内容时（不是仓库 URL、gh 不可用、clone 失败）再回落到 DeepSeek Fetch。
+			const activeConfig = state.config;
+			if (activeConfig?.github.enabled) {
+				const github = await extractGitHubUrl(url, activeConfig.github, signal);
+				if (github) {
+					return await buildFetchResult({
+						url,
+						title: github.title,
+						content: github.content,
+						source: github.source ?? "clone",
+					});
+				}
+			}
+
+			const { client, config } = requireClient(state);
 
 			const page = await client.fetchPage({ url }, { signal, timeoutMs: config.fetch.timeoutMs });
 			// DeepSeek Fetch 返回的是「标点全转义」的 Markdown，先去转义再用
 			const content = unescapeMarkdown(page.content);
-			if (!content.trim()) {
-				throw new Error("抓取成功但没有正文：目标页面可能没有可提取的 Markdown 内容，或被站点策略拦截。");
-			}
 
-			const text = formatFetchedPage({ title: page.title, url, content });
-			const truncated = await truncateWithTempFile(text, {
-				prefix: "pi-ds-fetch-",
-				fileName: "content.md",
-			});
-
-			const details: FetchDetails = {
-				url,
-				title: page.title,
-				contentLength: content.length,
-				...(truncated.truncated
-					? { truncation: truncated.truncation, fullOutputPath: truncated.fullOutputPath }
-					: {}),
-			};
-
-			return {
-				content: [{ type: "text" as const, text: truncated.content }],
-				details,
-				structuredContent: {
-					url,
-					title: page.title,
-					content,
-					contentLength: content.length,
-					truncated: truncated.truncated,
-					...(truncated.fullOutputPath ? { fullOutputPath: truncated.fullOutputPath } : {}),
-				},
-			};
+			return await buildFetchResult({ url, title: page.title, content, source: "deepseek" });
 		},
 
 		renderCall(args, theme) {
@@ -311,6 +355,7 @@ export function createFetchTool(state: ExtensionState) {
 
 			let text = theme.fg("success", `${details.contentLength} 字符`);
 			if (details.truncation?.truncated) text += theme.fg("warning", "（已截断）");
+			if (details.source !== "deepseek") text += theme.fg("dim", ` · ${SOURCE_LABELS[details.source]}`);
 			if (details.title) text += theme.fg("muted", ` · ${details.title}`);
 
 			if (!expanded) return new Text(text, 0, 0);

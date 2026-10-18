@@ -9,6 +9,7 @@ export interface ExtensionState {
 
 export const MISSING_KEY_MESSAGE =
 	"DeepSeek 网络工具未启用：缺少 API key。\n" +
+	"• 没有 key 时 ds_search 和普通网页抓取不可用，ds_fetch 仍能处理 GitHub 仓库与 PR/Issue 链接\n" +
 	"• 在项目 .pi/deepseek-web-tools.json 或用户级 ~/.pi/agent/deepseek-web-tools.json 写入 {\"apiKey\": \"sk-...\"}\n" +
 	"• 或设置环境变量 DEEPSEEK_API_KEY\n" +
 	"配置后执行 /reload 生效。";

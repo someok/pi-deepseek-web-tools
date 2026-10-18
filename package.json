@@ -1,7 +1,7 @@
 {
 	"name": "@someok/pi-deepseek-web-tools",
 	"version": "0.1.0",
-	"description": "pi 扩展：DeepSeek 网页搜索（ds_search）与网页抓取（ds_fetch）",
+	"description": "pi 扩展：DeepSeek 网页搜索（ds_search）与网页抓取（ds_fetch），GitHub 链接自动 clone 仓库并渲染 PR/Issue",
 	"type": "module",
 	"license": "MIT",
 	"author": "JX Wang <wjianxu@gmail.com>",
@@ -21,7 +21,8 @@
 		"pi-extension",
 		"deepseek",
 		"search",
-		"fetch"
+		"fetch",
+		"github"
 	],
 	"files": [
 		"src",

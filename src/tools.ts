@@ -92,11 +92,11 @@ function textOfContent(content: ReadonlyArray<unknown>): string {
 	return "";
 }
 
-/** 校验 /fetch 与 ds_fetch 共用的 URL 规则：http(s)、有 host、不带账号密码、长度上限 */
+/** 校验 /ds-fetch 与 ds_fetch 共用的 URL 规则：http(s)、有 host、不带账号密码、长度上限 */
 export function validateFetchUrl(raw: string): URL {
 	const trimmed = raw.trim();
 	if (trimmed.length === 0) {
-		throw new Error("缺少网址。用法：/fetch <网址>");
+		throw new Error("缺少网址。用法：/ds-fetch <网址>");
 	}
 	if (trimmed.length > MAX_URL_LENGTH) {
 		throw new Error(`网址过长（${trimmed.length} 字符），上限 ${MAX_URL_LENGTH} 字符`);

@@ -135,6 +135,8 @@ describe("DeepSeekWebClient.search", () => {
 		[403, "安全策略"],
 		[429, "QPS"],
 		[404, "接口路径不存在"],
+		[502, "服务端错误"],
+		[503, "服务端错误"],
 	])("HTTP %i 给出对应提示", async (status, hint) => {
 		const { client } = clientWith(() => jsonResponse({ error: { message: "nope" } }, status));
 

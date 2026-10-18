@@ -86,7 +86,7 @@ describe("扩展装配", () => {
 		deepseekWebTools(harness.pi);
 
 		expect(harness.tools).toEqual(["ds_search", "ds_fetch"]);
-		expect(harness.commands).toEqual(["search", "ds-search", "fetch", "ds-fetch", "ds-tool-config"]);
+		expect(harness.commands).toEqual(["ds-search", "ds-fetch", "ds-tool-config"]);
 		expect(harness.handlers.has("session_start")).toBe(true);
 
 		await harness.handlers.get("session_start")!({ type: "session_start", reason: "startup" }, sessionCtx(harness, cwd));

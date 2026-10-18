@@ -103,14 +103,14 @@ function setup(
 	};
 }
 
-describe("/search", () => {
+describe("/ds-search", () => {
 	it("没有参数时提示用法", async () => {
 		const { fake, handler } = setup({ config: makeConfig() });
 		const { ctx, notify } = createCtx();
 
-		await handler("search")("   ", ctx);
+		await handler("ds-search")("   ", ctx);
 
-		expect(notify).toHaveBeenCalledWith("用法：/search <搜索词>", "warning");
+		expect(notify).toHaveBeenCalledWith("用法：/ds-search <搜索词>", "warning");
 		expect(fake.entries).toHaveLength(0);
 	});
 
@@ -118,7 +118,7 @@ describe("/search", () => {
 		const { fake, handler } = setup({ config: makeConfig({ enabled: false, reason: "missing-key", apiKey: undefined }) });
 		const { ctx, notify } = createCtx();
 
-		await handler("search")("DeepSeek", ctx);
+		await handler("ds-search")("DeepSeek", ctx);
 
 		expect(String(notify.mock.calls[0]?.[0])).toContain("缺少 API key");
 		expect(fake.entries).toHaveLength(0);
@@ -132,7 +132,7 @@ describe("/search", () => {
 		});
 		const { ctx, notify } = createCtx();
 
-		await handler("search")("DeepSeek", ctx);
+		await handler("ds-search")("DeepSeek", ctx);
 
 		expect(client.search).toHaveBeenCalledWith(
 			{ query: "DeepSeek", count: 10, needContent: false },
@@ -154,7 +154,7 @@ describe("/search", () => {
 		});
 		const { ctx, notify } = createCtx();
 
-		await expect(handler("search")("DeepSeek", ctx)).resolves.toBeUndefined();
+		await expect(handler("ds-search")("DeepSeek", ctx)).resolves.toBeUndefined();
 
 		expect(notify).toHaveBeenCalledWith("DeepSeek 搜索失败（HTTP 401）", "error");
 		expect(fake.entries).toHaveLength(0);
@@ -168,20 +168,20 @@ describe("/search", () => {
 		});
 		const { ctx } = createCtx();
 
-		await handler("search")("查不到", ctx);
+		await handler("ds-search")("查不到", ctx);
 
 		expect(fake.entries[0]?.data.text).toContain("没有搜索到结果");
 	});
 });
 
-describe("/fetch", () => {
+describe("/ds-fetch", () => {
 	it("没有参数时提示用法", async () => {
 		const { fake, handler } = setup({ config: makeConfig() });
 		const { ctx, notify } = createCtx();
 
-		await handler("fetch")("", ctx);
+		await handler("ds-fetch")("", ctx);
 
-		expect(notify).toHaveBeenCalledWith("用法：/fetch <网址>", "warning");
+		expect(notify).toHaveBeenCalledWith("用法：/ds-fetch <网址>", "warning");
 		expect(fake.entries).toHaveLength(0);
 	});
 
@@ -193,7 +193,7 @@ describe("/fetch", () => {
 		});
 		const { ctx } = createCtx();
 
-		await handler("fetch")("<https://example.com/a>", ctx);
+		await handler("ds-fetch")("<https://example.com/a>", ctx);
 
 		expect(client.fetchPage).toHaveBeenCalledWith(
 			{ url: "https://example.com/a" },
@@ -212,7 +212,7 @@ describe("/fetch", () => {
 		});
 		const { ctx } = createCtx();
 
-		await handler("fetch")("https://example.com/big", ctx);
+		await handler("ds-fetch")("https://example.com/big", ctx);
 
 		const data = fake.entries[0]?.data;
 		expect(data.truncated).toBe(true);
@@ -229,7 +229,7 @@ describe("/fetch", () => {
 		});
 		const { ctx, notify } = createCtx();
 
-		await handler("fetch")("ftp://example.com/a", ctx);
+		await handler("ds-fetch")("ftp://example.com/a", ctx);
 
 		expect(String(notify.mock.calls[0]?.[0])).toContain("只支持 HTTP/HTTPS");
 		expect(client.fetchPage).not.toHaveBeenCalled();

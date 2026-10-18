@@ -38,7 +38,7 @@ export interface FormatSearchInput {
 	includeContent: boolean;
 }
 
-/** ds_search 工具与 /search 命令共用的文本格式 */
+/** ds_search 工具与 /ds-search 命令共用的文本格式 */
 export function formatSearchResults(input: FormatSearchInput): string {
 	const { query, results, includeContent } = input;
 
@@ -82,7 +82,7 @@ export interface FormatFetchInput {
 	content: string;
 }
 
-/** ds_fetch 工具与 /fetch 命令共用的文本格式 */
+/** ds_fetch 工具与 /ds-fetch 命令共用的文本格式 */
 export function formatFetchedPage(input: FormatFetchInput): string {
 	const title = input.title.trim();
 	const parts: string[] = [];

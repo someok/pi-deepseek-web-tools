@@ -7,7 +7,7 @@ import { notEnabledMessage, requireClient, type ExtensionState } from "./state";
 import { truncateWithTempFile } from "./truncate";
 import { validateFetchUrl } from "./tools";
 
-/** /search 结果写入会话的 custom entry 数据（不进模型上下文） */
+/** /ds-search 结果写入会话的 custom entry 数据（不进模型上下文） */
 interface SearchEntryData {
 	query: string;
 	resultCount: number;
@@ -16,7 +16,7 @@ interface SearchEntryData {
 	fullOutputPath?: string;
 }
 
-/** /fetch 结果写入会话的 custom entry 数据（不进模型上下文） */
+/** /ds-fetch 结果写入会话的 custom entry 数据（不进模型上下文） */
 interface FetchEntryData {
 	url: string;
 	title: string;
@@ -76,7 +76,7 @@ function configSummary(config: ResolvedConfig): string {
 	return lines.join("\n");
 }
 
-/** `/fetch <https://x>` 这种粘贴习惯：去掉包裹的尖括号 */
+/** `/ds-fetch <https://x>` 这种粘贴习惯：去掉包裹的尖括号 */
 function stripBrackets(value: string): string {
 	const trimmed = value.trim();
 	if (trimmed.startsWith("<") && trimmed.endsWith(">")) return trimmed.slice(1, -1).trim();
@@ -150,7 +150,7 @@ export function registerCommands(pi: ExtensionAPI, state: ExtensionState, deps: 
 	const searchHandler = async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
 		const query = args.trim();
 		if (!query) {
-			ctx.ui.notify("用法：/search <搜索词>", "warning");
+			ctx.ui.notify("用法：/ds-search <搜索词>", "warning");
 			return;
 		}
 		if (!state.client || !state.config?.enabled) {
@@ -197,7 +197,7 @@ export function registerCommands(pi: ExtensionAPI, state: ExtensionState, deps: 
 	const fetchHandler = async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
 		const raw = args.trim();
 		if (!raw) {
-			ctx.ui.notify("用法：/fetch <网址>", "warning");
+			ctx.ui.notify("用法：/ds-fetch <网址>", "warning");
 			return;
 		}
 		if (!state.client || !state.config?.enabled) {
@@ -235,22 +235,14 @@ export function registerCommands(pi: ExtensionAPI, state: ExtensionState, deps: 
 		}
 	};
 
-	pi.registerCommand("search", {
-		description: "用 DeepSeek 搜索网页（用法：/search <搜索词>）",
-		handler: searchHandler,
-	});
-	// 其他扩展可能也注册了 /search，pi 会给重名命令加 :1 / :2 后缀，用别名保证能调到自己这个
+	// 只注册 ds- 前缀名：pi-web-access 等扩展也占用了 /search，裸名会变成 search:1 / search:2 等后缀，
+	// 难以预测自己会拿到哪个名字。想换名字只需改这里。
 	pi.registerCommand("ds-search", {
-		description: "用 DeepSeek 搜索网页（/search 的稳定别名）",
+		description: "用 DeepSeek 搜索网页（用法：/ds-search <搜索词>）",
 		handler: searchHandler,
-	});
-
-	pi.registerCommand("fetch", {
-		description: "用 DeepSeek 抓取网页正文（用法：/fetch <网址>）",
-		handler: fetchHandler,
 	});
 	pi.registerCommand("ds-fetch", {
-		description: "用 DeepSeek 抓取网页正文（/fetch 的稳定别名）",
+		description: "用 DeepSeek 抓取网页正文（用法：/ds-fetch <网址>）",
 		handler: fetchHandler,
 	});
 

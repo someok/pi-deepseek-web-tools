@@ -7,12 +7,17 @@
 ## 安装
 
 ```bash
-# 让 pi 从本地目录加载（不写入设置）
-pi -e ./
+# 从 npm 安装（推荐），之后每次启动都加载
+pi install npm:@someok/pi-deepseek-web-tools
 
-# 或者安装成包，之后每次启动都加载
-pi install ./
+# 只试一次，不写设置
+pi -e npm:@someok/pi-deepseek-web-tools
+
+# 开发时从本地目录加载
+pi -e ./
 ```
+
+之前用 `pi install ./` 装过本地路径的，先用 `pi list` 找到那一条并 `pi remove <本地路径>`，再装 npm 包。两个入口同时存在会重复加载同一个扩展，工具名冲突会直接报错。
 
 ## 配置
 
@@ -81,7 +86,7 @@ pi install ./
 ### 界面上的显示
 
 - 工具行默认折叠，只显示结果条数或字符数；展开后显示工具返回的全部文本，不再按行数二次截断。
-- `/search`、`/fetch` 的结果同样默认折叠，**展开方式：`Ctrl+O` 或鼠标点击**；抓取结果按 Markdown 渲染（标题、列表、代码块、链接）。
+- `/ds-search`、`/ds-fetch` 的结果同样默认折叠，**展开方式：`Ctrl+O` 或鼠标点击**；抓取结果按 Markdown 渲染（标题、列表、代码块、链接）。
 - DeepSeek 的 Fetch 接口会把正文里的标点全转义（`\#`、`\-`、`\,`、`\/`），插件进来时先统一去转义，再渲染和给模型，所以界面上看不到反斜杠。Markdown 渲染关掉了 LaTeX 解析，`(a 100K context is enough)` 这类括号不会当成公式。
 - 唯一的上限是 2000 行 / 50KB（pi 对模型可见内容的约定）：超过时正文末尾会写一行 `[输出已截断：… 完整内容：/tmp/…]`，需要全文时让模型 `read` 那个临时文件。
 
@@ -89,10 +94,11 @@ pi install ./
 
 | 命令 | 作用 |
 | --- | --- |
-| `/search <搜索词>` | 手动跑一次搜索 |
-| `/fetch <网址>` | 手动抓一个网页，支持 `/fetch <https://...>` 这种粘贴形式 |
-| `/ds-search`、`/ds-fetch` | 上面两个命令的稳定别名（其他扩展占用了 `/search` 时用它们） |
+| `/ds-search <搜索词>` | 手动跑一次搜索 |
+| `/ds-fetch <网址>` | 手动抓一个网页，支持 `/ds-fetch <https://...>` 这种粘贴形式 |
 | `/ds-tool-config` | 查看当前生效的配置：启用状态、key 来源（脱敏）、超时、两个配置文件是否读到 |
+
+只注册 `ds-` 前缀的命令，不用 `/search`、`/fetch` 这种裸名：`/search` 已被别的扩展（如 pi-web-access）占用，pi 会给重名命令加 `:1`、`:2` 后缀，自己都不知道会拿到哪个。
 
 命令结果写成 custom entry：**只在界面上展示，不进模型上下文**，模型看不到你手动抓的内容。它们会存进当前会话，恢复会话后仍能翻看。
 
@@ -128,6 +134,18 @@ npm run check   # tsc --noEmit + vitest
 - 运行时不依赖任何 npm 包，用 Node 内置 `fetch`。
 - 测试全部走注入的 `fetchImpl`，不联网。
 - `src/config.ts` 是纯函数，方便单独测配置合并。
+
+## 发布到 npm
+
+```bash
+npm login
+npm version patch   # 可选：打版本、提交、打 tag
+npm publish
+```
+
+- `publishConfig.access` 已是 `public`（scoped 包不显式声明会默认私有，发布失败）。
+- `prepublishOnly` 会先跑 `npm run check`，typecheck 或测试挂了就不发。
+- 先 `npm pack --dry-run` 看打包内容：当前 13 个文件，只含 `src/`、README、LICENSE、示例配置，不含测试和计划文档。
 
 ## 安全
 

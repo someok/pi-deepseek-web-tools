@@ -128,6 +128,7 @@ function hintForStatus(status: number, operation: Operation): string {
 		case 504:
 			return "DeepSeek 下游请求超时，稍后重试。";
 		default:
+			if (status >= 500) return "DeepSeek 服务端错误，稍后重试。";
 			return "可稍后重试。";
 	}
 }

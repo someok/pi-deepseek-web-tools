@@ -45,6 +45,7 @@ function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
 	return {
 		enabled: true,
 		reason: "ok",
+		exposure: { search: "direct", fetch: "direct" },
 		apiKey: "sk-test-1234abcd",
 		apiKeySource: "project",
 		baseUrl: "https://api.deepseek.com",

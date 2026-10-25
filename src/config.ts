@@ -8,6 +8,24 @@ export type FileStatus = "missing" | "ok" | "invalid" | "untrusted";
 /** apiKey 来源 */
 export type ApiKeySource = "project" | "user" | "env";
 
+/**
+ * 单个工具的暴露方式。
+ * codemode：不声明给模型，只能从 codemode 脚本里通过 tools.ds_search / tools.ds_fetch 调用，
+ * 原始返回不进 context，只留下脚本 return 的内容。
+ * direct：工具直接声明给模型，模型可以自己调。
+ */
+export type ToolExposureMode = "direct" | "codemode";
+
+/**
+ * 每个工具各自的暴露方式。
+ * 搜索默认 codemode：结果列表体积大（10 条约 10k tokens），模型通常只要几个链接。
+ * 读取默认 direct：网页正文和图谱分支需要完整进 context，套一层脚本只会多一跳。
+ */
+export interface ToolExposureConfig {
+	search: ToolExposureMode;
+	fetch: ToolExposureMode;
+}
+
 export interface SearchConfig {
 	/** 单次搜索请求超时，默认 30000 */
 	timeoutMs: number;
@@ -37,6 +55,8 @@ export interface GitHubConfig {
 
 export interface ResolvedConfig {
 	enabled: boolean;
+	/** 工具暴露方式，按工具分开配 */
+	exposure: ToolExposureConfig;
 	/** 未启用的原因：ok 正常启用；missing-key 缺 key；explicitly-disabled 配置里关掉了 */
 	reason: "ok" | "missing-key" | "explicitly-disabled";
 	apiKey?: string;
@@ -59,6 +79,7 @@ export interface ResolveConfigInput {
 	projectTrusted: boolean;
 }
 
+export const DEFAULT_EXPOSURE: ToolExposureConfig = { search: "codemode", fetch: "direct" };
 export const DEFAULT_BASE_URL = "https://api.deepseek.com";
 export const DEFAULT_SEARCH_TIMEOUT_MS = 30_000;
 export const DEFAULT_FETCH_TIMEOUT_MS = 90_000;
@@ -73,7 +94,7 @@ export const MAX_CLONE_TIMEOUT_SECONDS = 600;
 export const MIN_REPO_SIZE_MB = 1;
 export const MAX_REPO_SIZE_MB = 100_000;
 
-const GLOBAL_KEYS = new Set(["enabled", "apiKey", "baseUrl", "search", "fetch", "github"]);
+const GLOBAL_KEYS = new Set(["enabled", "apiKey", "baseUrl", "exposure", "search", "fetch", "github"]);
 const SEARCH_KEYS = new Set(["timeoutMs", "count", "needContent"]);
 const FETCH_KEYS = new Set(["timeoutMs"]);
 const GITHUB_KEYS = new Set(["enabled", "maxRepoSizeMB", "cloneTimeoutSeconds", "clonePath", "prIssue"]);
@@ -143,6 +164,47 @@ function readBoolean(
 		return undefined;
 	}
 	return value;
+}
+
+function readExposureMode(
+	value: unknown,
+	label: string,
+	warnings: string[],
+): ToolExposureMode | undefined {
+	if (value === undefined || value === null) return undefined;
+	if (value === "direct" || value === "codemode") return value;
+	warnings.push(`${label} 只能是 "direct" 或 "codemode"，已忽略`);
+	return undefined;
+}
+
+/**
+ * 读 exposure。支持两种写法：
+ * - 字符串：两个工具都用这个值，例如 "direct"
+ * - 对象：按工具分别配，例如 { "search": "codemode", "fetch": "direct" }，可以只写其中一个
+ */
+function readExposure(
+	data: Record<string, unknown> | undefined,
+	label: string,
+	warnings: string[],
+): Partial<ToolExposureConfig> | undefined {
+	const value = data?.exposure;
+	if (value === undefined || value === null) return undefined;
+
+	if (typeof value === "string") {
+		const mode = readExposureMode(value, `${label} exposure`, warnings);
+		return mode ? { search: mode, fetch: mode } : undefined;
+	}
+
+	if (typeof value !== "object" || Array.isArray(value)) {
+		warnings.push(`${label} exposure 只能是字符串或 { "search", "fetch" } 对象，已忽略`);
+		return undefined;
+	}
+
+	const record = value as Record<string, unknown>;
+	const search = readExposureMode(record.search, `${label} exposure.search`, warnings);
+	const fetch = readExposureMode(record.fetch, `${label} exposure.fetch`, warnings);
+	if (search === undefined && fetch === undefined) return undefined;
+	return { ...(search ? { search } : {}), ...(fetch ? { fetch } : {}) };
 }
 
 function readApiKey(
@@ -300,6 +362,13 @@ export function resolveConfig(input: ResolveConfigInput): ResolvedConfig {
 	const baseUrl =
 		readBaseUrl(project, "项目配置", warnings) ?? readBaseUrl(user, "用户配置", warnings) ?? DEFAULT_BASE_URL;
 
+	const projectExposure = readExposure(project, "项目配置", warnings);
+	const userExposure = readExposure(user, "用户配置", warnings);
+	const exposure: ToolExposureConfig = {
+		search: projectExposure?.search ?? userExposure?.search ?? DEFAULT_EXPOSURE.search,
+		fetch: projectExposure?.fetch ?? userExposure?.fetch ?? DEFAULT_EXPOSURE.fetch,
+	};
+
 	const searchTimeoutMs =
 		readInteger(projectSearch, "timeoutMs", "项目配置 search.timeoutMs", { min: MIN_TIMEOUT_MS, max: MAX_TIMEOUT_MS }, warnings) ??
 		readInteger(userSearch, "timeoutMs", "用户配置 search.timeoutMs", { min: MIN_TIMEOUT_MS, max: MAX_TIMEOUT_MS }, warnings) ??
@@ -371,6 +440,7 @@ export function resolveConfig(input: ResolveConfigInput): ResolvedConfig {
 	return {
 		enabled,
 		reason,
+		exposure,
 		...(apiKey !== undefined ? { apiKey } : {}),
 		...(apiKeySource !== undefined ? { apiKeySource } : {}),
 		baseUrl,

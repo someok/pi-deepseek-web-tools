@@ -42,6 +42,10 @@ pi -e ./
   "enabled": true,
   "apiKey": "sk-...",
   "baseUrl": "https://api.deepseek.com",
+  "exposure": {
+    "search": "codemode",
+    "fetch": "direct"
+  },
   "search": {
     "timeoutMs": 30000,
     "count": 10,
@@ -67,6 +71,7 @@ pi -e ./
 | `enabled` | 有 apiKey 即启用 | `false` 强制关闭，即使环境变量有 key |
 | `apiKey` | 无 | 空白字符串视为没写 |
 | `baseUrl` | `https://api.deepseek.com` | 尾部斜杠会被去掉 |
+| `exposure` | `{ "search": "codemode", "fetch": "direct" }` | 按工具分别配：`codemode` 隐藏声明、只能从脚本调用，`direct` 直接声明给模型。写字符串（`"direct"` / `"codemode"`）表示两个工具都用这个值 |
 | `search.timeoutMs` | `30000` | 1000～300000 |
 | `search.count` | 不发送（API 默认 10） | 1～50 |
 | `search.needContent` | `false` | 是否在搜索结果里带网页正文 |

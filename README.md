@@ -44,6 +44,10 @@ Full example (also in `deepseek-web-tools.example.json`):
   "enabled": true,
   "apiKey": "sk-...",
   "baseUrl": "https://api.deepseek.com",
+  "exposure": {
+    "search": "codemode",
+    "fetch": "direct"
+  },
   "search": {
     "timeoutMs": 30000,
     "count": 10,
@@ -69,6 +73,7 @@ Merge rules: each field resolves project → user → default; `apiKey` addition
 | `enabled` | enabled when an apiKey resolves | `false` forces the tools off, even if the env var has a key |
 | `apiKey` | none | a blank string counts as missing |
 | `baseUrl` | `https://api.deepseek.com` | trailing slashes are stripped |
+| `exposure` | `{ "search": "codemode", "fetch": "direct" }` | per-tool declaration mode; `codemode` hides the tool so only scripts can call it, `direct` declares it to the model. A bare string (`"direct"` / `"codemode"`) applies to both tools |
 | `search.timeoutMs` | `30000` | 1000–300000 |
 | `search.count` | not sent (API default 10) | 1–50 |
 | `search.needContent` | `false` | include page body in search results |

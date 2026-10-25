@@ -12,6 +12,7 @@ interface FakeHarness {
 	commands: string[];
 	handlers: Map<string, Handler>;
 	active: () => string[];
+	exposures: () => Record<string, string>;
 	setActiveTools: ReturnType<typeof vi.fn>;
 	notify: ReturnType<typeof vi.fn>;
 }
@@ -21,15 +22,19 @@ function createHarness(): FakeHarness {
 	const commands: string[] = [];
 	const handlers = new Map<string, Handler>();
 	let active: string[] = [];
+	// 真实 pi 里只有 direct 工具注册即激活，codemode 注册不碰 active set
+	const exposures: Record<string, string> = {};
 	const notify = vi.fn();
 	const setActiveTools = vi.fn((names: string[]) => {
 		active = [...names];
 	});
 
 	const pi = {
-		registerTool: (tool: { name: string }) => {
-			tools.push(tool.name);
-			active.push(tool.name);
+		registerTool: (tool: { name: string; exposure?: string }) => {
+			// 真实 pi 里同名注册是替换，不会重复入列；exposure 只在注册时生效
+			if (!tools.includes(tool.name)) tools.push(tool.name);
+			exposures[tool.name] = tool.exposure ?? "direct";
+			if (exposures[tool.name] === "direct" && !active.includes(tool.name)) active.push(tool.name);
 		},
 		registerCommand: (name: string) => {
 			commands.push(name);
@@ -46,7 +51,7 @@ function createHarness(): FakeHarness {
 		setActiveTools,
 	};
 
-	return { pi, tools, commands, handlers, active: () => active, setActiveTools, notify };
+	return { pi, tools, commands, handlers, active: () => active, exposures: () => ({ ...exposures }), setActiveTools, notify };
 }
 
 async function tempDirs(): Promise<{ cwd: string; agentDir: string }> {
@@ -92,11 +97,43 @@ describe("扩展装配", () => {
 		await harness.handlers.get("session_start")!({ type: "session_start", reason: "startup" }, sessionCtx(harness, cwd));
 	});
 
+	it("默认 search 走 codemode 不激活，fetch 走 direct 保持激活", async () => {
+		const { agentDir, cwd } = await tempDirs();
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+		process.env.DEEPSEEK_API_KEY = "sk-env";
+		const harness = createHarness();
+
+		deepseekWebTools(harness.pi);
+		await harness.handlers.get("session_start")!({ type: "session_start", reason: "startup" }, sessionCtx(harness, cwd));
+
+		expect(harness.exposures()).toEqual({ ds_search: "codemode", ds_fetch: "direct" });
+		expect(harness.active()).toEqual(["ds_fetch"]);
+		expect(harness.notify).not.toHaveBeenCalled();
+	});
+
+	it("exposure 按工具单独配时各自生效", async () => {
+		const { agentDir, cwd } = await tempDirs();
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+		process.env.DEEPSEEK_API_KEY = "sk-env";
+		await writeFile(
+			join(agentDir, "deepseek-web-tools.json"),
+			JSON.stringify({ exposure: { search: "direct", fetch: "codemode" } }),
+			"utf8",
+		);
+		const harness = createHarness();
+
+		deepseekWebTools(harness.pi);
+		await harness.handlers.get("session_start")!({ type: "session_start", reason: "startup" }, sessionCtx(harness, cwd));
+
+		expect(harness.exposures()).toEqual({ ds_search: "direct", ds_fetch: "codemode" });
+		expect(harness.active()).toEqual(["ds_search"]);
+	});
+
 	it("用户级配置有 key 时保持工具激活且不提示", async () => {
 		const { agentDir, cwd } = await tempDirs();
 		process.env.PI_CODING_AGENT_DIR = agentDir;
 		delete process.env.DEEPSEEK_API_KEY;
-		await writeFile(join(agentDir, "deepseek-web-tools.json"), JSON.stringify({ apiKey: "sk-user" }), "utf8");
+		await writeFile(join(agentDir, "deepseek-web-tools.json"), JSON.stringify({ apiKey: "sk-user", exposure: "direct" }), "utf8");
 		const harness = createHarness();
 
 		deepseekWebTools(harness.pi);
@@ -106,10 +143,32 @@ describe("扩展装配", () => {
 		expect(harness.active()).toEqual(["ds_search", "ds_fetch"]);
 	});
 
+	it("同一进程里 direct 会话切到 codemode 会重新注册成 codemode", async () => {
+		const { agentDir, cwd } = await tempDirs();
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+		process.env.DEEPSEEK_API_KEY = "sk-env";
+		const configFile = join(agentDir, "deepseek-web-tools.json");
+		await writeFile(configFile, JSON.stringify({ exposure: "direct" }), "utf8");
+		const harness = createHarness();
+
+		deepseekWebTools(harness.pi);
+		await harness.handlers.get("session_start")!({ type: "session_start", reason: "startup" }, sessionCtx(harness, cwd));
+		expect(harness.exposures()).toEqual({ ds_search: "direct", ds_fetch: "direct" });
+		expect(harness.active()).toEqual(["ds_search", "ds_fetch"]);
+
+		// 下一个 session 换成 codemode：注册表里必须是 codemode 版本，不能留着上一轮的 direct
+		await writeFile(configFile, JSON.stringify({ exposure: "codemode" }), "utf8");
+		await harness.handlers.get("session_start")!({ type: "session_start", reason: "startup" }, sessionCtx(harness, cwd));
+
+		expect(harness.exposures()).toEqual({ ds_search: "codemode", ds_fetch: "codemode" });
+		expect(harness.active()).toEqual([]);
+	});
+
 	it("没有 key 时只保留 ds_fetch 并提示一次", async () => {
 		const { agentDir, cwd } = await tempDirs();
 		process.env.PI_CODING_AGENT_DIR = agentDir;
 		delete process.env.DEEPSEEK_API_KEY;
+		await writeFile(join(agentDir, "deepseek-web-tools.json"), JSON.stringify({ exposure: "direct" }), "utf8");
 		const harness = createHarness();
 
 		deepseekWebTools(harness.pi);
@@ -128,7 +187,7 @@ describe("扩展装配", () => {
 		process.env.DEEPSEEK_API_KEY = "sk-env";
 		await writeFile(
 			join(cwd, ".pi", "deepseek-web-tools.json"),
-			JSON.stringify({ enabled: false }),
+			JSON.stringify({ enabled: false, exposure: "direct" }),
 			"utf8",
 		);
 		const harness = createHarness();
@@ -144,9 +203,10 @@ describe("扩展装配", () => {
 		const { agentDir, cwd } = await tempDirs();
 		process.env.PI_CODING_AGENT_DIR = agentDir;
 		delete process.env.DEEPSEEK_API_KEY;
+		await writeFile(join(agentDir, "deepseek-web-tools.json"), JSON.stringify({ exposure: "direct" }), "utf8");
 		await writeFile(
 			join(cwd, ".pi", "deepseek-web-tools.json"),
-			JSON.stringify({ apiKey: "sk-project" }),
+			JSON.stringify({ apiKey: "sk-project", exposure: "direct" }),
 			"utf8",
 		);
 		const harness = createHarness();

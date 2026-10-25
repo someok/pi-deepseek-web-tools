@@ -2,10 +2,11 @@ import { defineTool, type TruncationResult } from "@earendil-works/pi-coding-age
 import { Container, Markdown, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import type { SearchResultItem } from "./client";
+import type { ToolExposureMode } from "./config";
 import { formatFetchedPage, formatSearchResults, unescapeMarkdown } from "./format";
 import { extractGitHubUrl } from "./github";
 import { markdownThemeFrom } from "./markdown-theme";
-import { requireClient, type ExtensionState } from "./state";
+import { notEnabledMessage, requireClient, type ExtensionState } from "./state";
 import { truncateWithTempFile } from "./truncate";
 
 const MAX_URL_LENGTH = 8192;
@@ -206,10 +207,11 @@ function toStructuredItem(item: SearchResultItem, includeContent: boolean): Stru
 	};
 }
 
-export function createSearchTool(state: ExtensionState) {
+export function createSearchTool(state: ExtensionState, exposure: ToolExposureMode = "codemode") {
 	return defineTool({
 		name: "ds_search",
 		label: "DeepSeek 搜索",
+		exposure,
 		description:
 			"用 DeepSeek 网页搜索检索最新外部信息，返回标题、URL、摘要与发布时间。需要读整页时对结果 URL 再用 ds_fetch。输出超过 2000 行或 50KB 时会截断，完整结果写入临时文件。",
 		promptSnippet: "ds_search: 用 DeepSeek 搜索网页，返回标题、URL 与摘要",
@@ -296,10 +298,11 @@ export function createSearchTool(state: ExtensionState) {
 	});
 }
 
-export function createFetchTool(state: ExtensionState) {
+export function createFetchTool(state: ExtensionState, exposure: ToolExposureMode = "codemode") {
 	return defineTool({
 		name: "ds_fetch",
 		label: "DeepSeek 抓取",
+		exposure,
 		description:
 			"抓取单个 URL 并返回标题与 Markdown 正文。GitHub 链接会自动走专用路径：仓库克隆到本地并给出路径与目录树，PR/Issue 用 gh 渲染成结构化文档；其余地址走 DeepSeek Fetch。正文超过 2000 行或 50KB 时会截断，完整内容写入临时文件。",
 		promptSnippet: "ds_fetch: 抓取网页正文；GitHub 链接自动 clone 或渲染 PR/Issue",
@@ -318,6 +321,11 @@ export function createFetchTool(state: ExtensionState) {
 			// GitHub 链接先走专用路径：clone 仓库或 gh 渲染 PR/Issue，不消耗 DeepSeek 额度。
 			// 拿不到内容时（不是仓库 URL、gh 不可用、clone 失败）再回落到 DeepSeek Fetch。
 			const activeConfig = state.config;
+			// codemode 暴露的工具注册即可调用，active set 只决定“是否声明给模型”，挡不住脚本调用。
+			// 所以硬禁用必须在这里挡，否则 codemode 脚本仍能触发 clone/gh。
+			if (activeConfig?.reason === "explicitly-disabled") {
+				throw new Error(notEnabledMessage(activeConfig));
+			}
 			if (activeConfig?.github.enabled) {
 				const github = await extractGitHubUrl(url, activeConfig.github, signal);
 				if (github) {

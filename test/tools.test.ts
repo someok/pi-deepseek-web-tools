@@ -5,6 +5,9 @@ import type { ResolvedConfig } from "../src/config";
 import type { ExtensionState } from "../src/state";
 import { createFetchTool, createSearchTool, validateFetchUrl } from "../src/tools";
 
+const extractGitHubUrlMock = vi.hoisted(() => vi.fn());
+vi.mock("../src/github", () => ({ extractGitHubUrl: extractGitHubUrlMock }));
+
 type AnyTool = { execute: (...args: unknown[]) => Promise<any> };
 
 function run(tool: unknown, params: unknown): Promise<any> {
@@ -15,6 +18,7 @@ function makeConfig(overrides: { search?: Partial<ResolvedConfig["search"]>; fet
 	return {
 		enabled: true,
 		reason: "ok",
+		exposure: { search: "direct", fetch: "direct" },
 		apiKey: "sk-test",
 		apiKeySource: "env",
 		baseUrl: "https://api.deepseek.com",
@@ -287,6 +291,20 @@ describe("渲染", () => {
 
 		expect(rendered).toContain("3 条结果");
 		expect(rendered).not.toContain("正文内容");
+	});
+});
+
+describe("ds_fetch 硬禁用", () => {
+	it("enabled: false 时连 GitHub 分支也不执行", async () => {
+		extractGitHubUrlMock.mockReset();
+		extractGitHubUrlMock.mockResolvedValue({ title: "t", content: "c", source: "clone" });
+		// codemode 暴露下工具注册即可调用，active set 挡不住脚本；硬禁用必须在 execute 里挡
+		const config: ResolvedConfig = { ...makeConfig(), enabled: false, reason: "explicitly-disabled" };
+		config.github = { ...config.github, enabled: true };
+		const tool = createFetchTool({ config });
+
+		await expect(run(tool, { url: "https://github.com/o/r" })).rejects.toThrow("已被配置禁用");
+		expect(extractGitHubUrlMock).not.toHaveBeenCalled();
 	});
 });
 

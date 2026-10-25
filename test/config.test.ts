@@ -255,6 +255,56 @@ describe("resolveConfig", () => {
 
 		expect(config.baseUrl).toBe(DEFAULT_BASE_URL);
 	});
+
+	it("未写 exposure 时搜索走 codemode、读取走 direct", async () => {
+		const config = resolveConfig(await setup({ user: { apiKey: "sk-user" } }));
+
+		expect(config.exposure).toEqual({ search: "codemode", fetch: "direct" });
+	});
+
+	it("exposure 写字符串时两个工具都用同一个值", async () => {
+		const config = resolveConfig(await setup({ user: { apiKey: "sk-user", exposure: "direct" } }));
+
+		expect(config.exposure).toEqual({ search: "direct", fetch: "direct" });
+	});
+
+	it("exposure 写对象时按工具单独配，项目级逐项压过用户级", async () => {
+		const fromUser = resolveConfig(
+			await setup({ user: { apiKey: "sk-user", exposure: { search: "direct", fetch: "codemode" } } }),
+		);
+		expect(fromUser.exposure).toEqual({ search: "direct", fetch: "codemode" });
+
+		// 项目级只写 search，fetch 仍然用用户级的 codemode
+		const mixed = resolveConfig(
+			await setup({
+				user: { apiKey: "sk-user", exposure: { search: "direct", fetch: "codemode" } },
+				project: { exposure: { search: "codemode" } },
+			}),
+		);
+		expect(mixed.exposure).toEqual({ search: "codemode", fetch: "codemode" });
+
+		// 项目级没写的那个工具回退到默认值
+		const partial = resolveConfig(
+			await setup({ user: { apiKey: "sk-user", exposure: { search: "direct" } } }),
+		);
+		expect(partial.exposure).toEqual({ search: "direct", fetch: "direct" });
+	});
+
+	it("非法 exposure 回退默认值并记警告", async () => {
+		const config = resolveConfig(await setup({ user: { apiKey: "sk-user", exposure: "deferred" } }));
+
+		expect(config.exposure).toEqual({ search: "codemode", fetch: "direct" });
+		expect(config.warnings.join("\n")).toContain("exposure");
+	});
+
+	it("exposure 对象里的非法值单独回退", async () => {
+		const config = resolveConfig(
+			await setup({ user: { apiKey: "sk-user", exposure: { search: "deferred", fetch: "codemode" } } }),
+		);
+
+		expect(config.exposure).toEqual({ search: "codemode", fetch: "codemode" });
+		expect(config.warnings.join("\n")).toContain("exposure.search");
+	});
 });
 
 describe("maskApiKey", () => {

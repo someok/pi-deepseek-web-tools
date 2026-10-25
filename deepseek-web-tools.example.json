@@ -2,6 +2,10 @@
 	"enabled": true,
 	"apiKey": "sk-your-deepseek-api-key",
 	"baseUrl": "https://api.deepseek.com",
+	"exposure": {
+		"search": "codemode",
+		"fetch": "direct"
+	},
 	"search": {
 		"timeoutMs": 30000,
 		"count": 10,
